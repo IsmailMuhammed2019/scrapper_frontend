@@ -56,12 +56,20 @@ export interface ScanSession {
   error_message: string | null;
 }
 
+export interface Source {
+  domain: string;
+  url: string;
+  status: 'online' | 'offline' | 'unknown';
+}
+
 interface ThreatStore {
   threats: Threat[];
   allComments: ScannedComment[];
   articles: Article[];
   stats: ThreatStats;
   scanSessions: ScanSession[];
+  sources: Source[];
+  sourcesStats: { online: number; total: number };
   isScanning: boolean;
   activeKeyword: string | null;
   scanError: string | null;
@@ -81,6 +89,7 @@ interface ThreatStore {
   triggerScan: (keyword: string, category?: string) => Promise<void>;
   pollScanStatus: () => Promise<void>;
   clearDatabase: () => Promise<void>;
+  fetchSources: () => Promise<void>;
 }
 
 export const useThreatStore = create<ThreatStore>((set, get) => {
@@ -112,7 +121,6 @@ export const useThreatStore = create<ThreatStore>((set, get) => {
 
         if (!status.is_scanning) {
           stopPolling();
-          // Scan completed — refresh all data
           get().fetchThreats();
           get().fetchAllComments();
           get().fetchStats();
@@ -133,6 +141,8 @@ export const useThreatStore = create<ThreatStore>((set, get) => {
     articles: [],
     stats: { high: 0, medium: 0, low: 0, total: 0, comments_scanned: 0 },
     scanSessions: [],
+    sources: [],
+    sourcesStats: { online: 0, total: 0 },
     isScanning: false,
     activeKeyword: null,
     scanError: null,
@@ -205,7 +215,6 @@ export const useThreatStore = create<ThreatStore>((set, get) => {
     deleteScanSession: async (id: number) => {
       try {
         await api.delete(`/api/scans/${id}`);
-        // Refresh all data since comments associated with this scan were deleted
         get().fetchScanSessions();
         get().fetchThreats();
         get().fetchAllComments();
@@ -253,9 +262,32 @@ export const useThreatStore = create<ThreatStore>((set, get) => {
     clearDatabase: async () => {
       try {
         await api.delete('/api/clear');
-        set({ threats: [], allComments: [], articles: [], scanSessions: [], stats: { high: 0, medium: 0, low: 0, total: 0, comments_scanned: 0 } });
+        set({
+          threats: [],
+          allComments: [],
+          articles: [],
+          scanSessions: [],
+          sources: [],
+          sourcesStats: { online: 0, total: 0 },
+          stats: { high: 0, medium: 0, low: 0, total: 0, comments_scanned: 0 },
+        });
       } catch (err) {
         console.error('Failed to clear database:', err);
+      }
+    },
+
+    fetchSources: async () => {
+      try {
+        const response = await api.get('/api/sources');
+        set({
+          sources: response.data.sources || [],
+          sourcesStats: {
+            online: response.data.online || 0,
+            total: response.data.total || 0,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to fetch sources:', err);
       }
     },
   };
